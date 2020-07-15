@@ -56,27 +56,26 @@
         private_path = './conf/empty.private.key' # 与 password 二选一
 
 [strategy] #运行策略
-	[strategy.sync_mq] #通过binlog写入mq, 消费mq同步
-	    [[strategy.sync_mq.mysql]]
-	        name       = "cn_to_aws_database"    #注意只能使用字母，数字，下划线
-	        kind       = "kafka"
-            conf_path  = "./conf/kafka.conf"
-            group      = "iot_data_sync"
-	        topics     = ["iot_mysql_binlog_test"]
-	        log_path   = "./log/consumer.log"
-	[strategy.sync_direct] #定时任务同步
-		#仅支持追加
-		append_duration = 60 # s, 同步周期
-		#废弃，直接从目标库读取当前主键id, 然后追加
+        [strategy.sync_mq] #通过binlog写入mq, 消费mq同步
+            [[strategy.sync_mq.mysql]]
+                name       = "cn_to_aws_database"    #注意只能使用字母，数字，下划线
+                kind       = "kafka"
+                conf_path  = "./conf/kafka.conf"
+                group      = "iot_data_sync"
+                topics     = ["iot_mysql_binlog_test"]
+                log_path   = "./log/consumer.log"
+        [strategy.sync_direct] #定时任务同步
+                #仅支持追加
+                append_duration = 60 # s, 同步周期
 
-	[strategy.inspect] #巡检模式,不做同步
-		inspect_duration = 30 #s, 巡检周期, 当与定时任务同时进行时,应大于 append_duration
-		inspect_alarm_count = 5 #巡检5次,数据仍然不一致且[primaryId未曾变化],报警
+        [strategy.inspect] #巡检模式,不做同步
+                inspect_duration = 30 #s, 巡检周期, 当与定时任务同时进行时,应大于 append_duration
+                inspect_alarm_count = 5 #巡检5次,数据仍然不一致且[primaryId未曾变化],报警
 
 [[mysql_task]]
     task_name = "mysql_database_name_prod_to_test" #注意命名需要全局唯一, 只能使用字母，数字，下划线,
-	database = "database_name"
-	data_mode = "PART" #ALL全同步; PART 指定表
+    database = "database_name"
+    data_mode = "PART" #ALL全同步; PART 指定表
     include_tables = ["user"] #同步表,data_mode=PART时, 则使用该字段(优先)
     exclude_tables = [] #不同步表,data_mode=PART时, 则使用该字段
 
@@ -84,27 +83,27 @@
         [mysql_task.regular.table_name]  #表
             table_name = "table_name"     #表名称
             filter_cols = ["col1","col2"] #过滤字段, 被过滤的字段不同步
-	[mysql_task.source]
-		db_host = "110.111.112.113"
-		db_port = 3306
-		db_username = "database_name"
-		db_password = "database_password"
-		enable_ssh = true #关闭ssh隧道模式,直接使用host+port
-		[mysql_task.source.ssh]
-		    ssh_username = "yushaolong" #使用隧道用户
-		    tunnel_host = "127.0.0.1" #打通本地ip
-		    tunnel_port = 3306
-	[mysql_task.target]
-		db_host = "114.115.116.117"
-		db_port = 3307
-        db_username = "database_name"
-        db_password = "database_password"
-		enable_ssh = false   #开启ssh隧道模式
-		[mysql_task.target.ssh]
+        [mysql_task.source]
+            db_host = "110.111.112.113"
+            db_port = 3306
+            db_username = "database_name"
+            db_password = "database_password"
+            enable_ssh = true #关闭ssh隧道模式,直接使用host+port
+            [mysql_task.source.ssh]
+                ssh_username = "yushaolong" #使用隧道用户
+                tunnel_host = "127.0.0.1" #打通本地ip
+                tunnel_port = 3306
+        [mysql_task.target]
+            db_host = "114.115.116.117"
+            db_port = 3307
+            db_username = "database_name"
+            db_password = "database_password"
+            enable_ssh = false   #开启ssh隧道模式
+            [mysql_task.target.ssh]
 
     [mysql_task.strategy] # 数据库策略
-    	    strategy_mode = 4 # 策略模式: 1仅mq; 2仅定时; 4仅巡检; 5 使用mq并巡检; 6 使用定时并巡检; 7 同时mq,定时,巡检
-    	    sync_mq_name = "cn_to_aws_database" # 当模式包含mq时, 该字段有效
+            strategy_mode = 4 # 策略模式: 1仅mq; 2仅定时; 4仅巡检; 5 使用mq并巡检; 6 使用定时并巡检; 7 同时mq,定时,巡检
+            sync_mq_name = "cn_to_aws_database" # 当模式包含mq时, 该字段有效
 ```
 
 ### 5.代码目录
