@@ -1,0 +1,19 @@
+{
+    "LogLevel" : "info",
+
+    "FileWriter" : {
+        "On": true,
+
+        "LogPath" : "./log/iot.data-sync.log.info",
+        "RotateLogPath" : "./log/iot.data-sync.log.info.%Y%M%D%H",
+
+        "WfLogPath" : "./log/iot.data-sync.log.wf",
+        "RotateWfLogPath" : "./log/iot.data-sync.log.wf.%Y%M%D%H",
+
+        "PublicLogPath" : "./log/public.log",
+        "RotatePublicLogPath" : "./log/public.log.%Y%M%D%H"
+    },
+    "ConsoleWriter" : {
+        "On" : false
+    }
+}

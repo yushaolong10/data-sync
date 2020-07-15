@@ -1,0 +1,6 @@
+.idea/*
+.vscode/*
+bin/*
+pkg/*
+log/*
+iot-data-sync

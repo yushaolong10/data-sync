@@ -1,0 +1,17 @@
+{
+    "LogLevel" : "info",
+
+    "FileWriter" : {
+        "On": true,
+
+        "LogPath" : "./logs/cloudjoin.log.info",
+        "RotateLogPath" : "./logs/cloudjoin.log.info.%Y%M%D",
+
+        "WfLogPath" : "./logs/cloudjoin.log.wf",
+        "RotateWfLogPath" : "./logs/cloudjoin.log.wf.%Y%M%D"
+    },
+
+    "ConsoleWriter" : {
+        "On" : false
+    }
+}
