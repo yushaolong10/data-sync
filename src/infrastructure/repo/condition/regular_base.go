@@ -2,6 +2,7 @@ package condition
 
 type RegularTableMap struct {
 	FilterCols map[string]struct{}
+	IsUpsert   bool
 }
 
 type MysqlBaseRegularCondImpl struct {
@@ -38,4 +39,11 @@ func (cond *MysqlBaseRegularCondImpl) GetTableFilterCols(table string) map[strin
 		return cols.FilterCols
 	}
 	return make(map[string]struct{})
+}
+
+func (cond *MysqlBaseRegularCondImpl) IsUpsert(table string) bool {
+	if cols, ok := cond.RegularTableMap[table]; ok {
+		return cols.IsUpsert
+	}
+	return false
 }

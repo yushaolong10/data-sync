@@ -13,7 +13,7 @@ import (
 )
 
 type Hooker interface {
-	HandleMqMessage(message *TopicMessage) error
+	HandleMqMessage(ctx *context.BizContext, message *TopicMessage) error
 }
 
 type StrategySyncMq struct {
@@ -76,26 +76,31 @@ func (strategy *StrategySyncMq) getMqMessage() {
 		var msg *TopicMessage
 		select {
 		case msg = <-strategy.messageChan:
-			strategy.safeHook(msg)
+			//biz context with requestId
+			ctx := &context.BizContext{
+				RequestId:   util.GetTraceId(),
+				BaseContext: strategy.ctx,
+			}
+			strategy.safeHook(ctx, msg)
 		}
 	}
 }
 
-func (strategy *StrategySyncMq) safeHook(msg *TopicMessage) (err error) {
+func (strategy *StrategySyncMq) safeHook(ctx *context.BizContext, msg *TopicMessage) (err error) {
 	defer func(begin time.Time) {
 		if p := recover(); p != nil {
 			err = fmt.Errorf("panic")
 			monitor.UpdatePanic("syncmq")
-			logger.Error("[StrategySyncMq.safeHook] name:%s, #Panic#(%v),backTrace:%s", strategy.name, p, string(debug.Stack()))
+			logger.Error("[StrategySyncMq.safeHook] requestId:%s,name:%s, #Panic#(%v),backTrace:%s", ctx.RequestId, strategy.name, p, string(debug.Stack()))
 		}
 		//timeUsed
 		interval := util.GetDurationMillis(begin)
 		monitor.UpdateStrategy("syncmq", strategy.name, interval, err)
-		logger.Info("[StrategySyncDirect.safeHook] name:%s,msg:%s,timeUsed:%dus,err:%v", strategy.name, msg.Message, interval, err)
+		logger.Info("[StrategySyncDirect.safeHook] requestId:%s,name:%s,msg:%s,timeUsed:%dus,err:%v", ctx.RequestId, strategy.name, msg.Message, interval, err)
 	}(time.Now())
-	err = strategy.hook.HandleMqMessage(msg)
+	err = strategy.hook.HandleMqMessage(ctx, msg)
 	if err != nil {
-		logger.Error("[StrategySyncMq.safeHook] HandleMqMessage error. name:%s,msg:%s,err:%s", strategy.name, util.StructToJson(msg), err.Error())
+		logger.Error("[StrategySyncMq.safeHook] requestId:%s,HandleMqMessage error. name:%s,msg:%s,err:%s", ctx.RequestId, strategy.name, util.StructToJson(msg), err.Error())
 	}
 	return nil
 }

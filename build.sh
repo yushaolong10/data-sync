@@ -3,14 +3,12 @@
 ModuleName=iot-data-sync
 
 export GOPATH=`pwd`
-export LD_LIBRARY_PATH=$GOPATH/src/vendor/360.cn/qbus/
-
 
 make clean && make
 
 if [ $? -ne 0 ]; then
     echo "build failed"
-    exit
+    exit 1
 else
     echo "build succeed"
 fi

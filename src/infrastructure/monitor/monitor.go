@@ -43,10 +43,11 @@ func monitor() {
 
 func register() {
 	prometheus.Register(prometheus.PrometheusTypeTotal, MONITER_NAME_HISTOGRAM_STATISTICS, []string{"module"}, nil)
+	prometheus.Register(prometheus.PrometheusTypeQPS, MONITER_NAME_COUNTER_PANIC, []string{"source"}, nil)
+	prometheus.Register(prometheus.PrometheusTypeQPS, MONITER_NAME_COUNTER_EXCEPTION, []string{"name", "source", "index"}, nil)
 	prometheus.Register(prometheus.PrometheusTypeGauge, MONITER_NAME_GAUGE_STATE, []string{"source", "index"}, nil)
 	prometheus.Register(prometheus.PrometheusTypeTotal, MONITER_NAME_HISTOGRAM_DEPENDENCE, []string{"service", "function", "status"}, nil)
-	prometheus.Register(prometheus.PrometheusTypeQPS, MONITER_NAME_COUNTER_PANIC, []string{"source", "index"}, nil)
-	prometheus.Register(prometheus.PrometheusTypeQPS, MONITER_NAME_COUNTER_EXCEPTION, []string{"interface", "status"}, nil)
+	prometheus.Register(prometheus.PrometheusTypeTotal, MONITER_NAME_HISTOGRAM_STRATEGY, []string{"strategy", "name", "status"}, nil)
 }
 
 func UpdateStatistics(module string, value int64) {
@@ -63,8 +64,9 @@ func UpdatePanic(source string) {
 	prometheus.Update(prometheus.PrometheusTypeQPS, MONITER_NAME_COUNTER_PANIC, labels, 0)
 }
 
-func UpdateException(source string, index string) {
+func UpdateException(name string, source string, index string) {
 	labels := map[string]string{
+		"name":   name,
 		"source": source,
 		"index":  index,
 	}

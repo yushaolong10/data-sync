@@ -25,7 +25,7 @@
 #   unused-packages = true
 
 # 忽略包
-ignored = ["360.cn/qbus","github.com/shengkehua/xlog4go"]
+ignored = ["github.com/shengkehua/xlog4go"]
 
 [prune]
   go-tests = true

@@ -40,16 +40,16 @@ func main() {
 	setCrashLog("./log/iot.sync.dump")
 	//config init
 	if err := config.Init(*confFile); err != nil {
-		logger.Error("[IOT]initial config failed, err=%v", err)
+		logger.Error("[IOT]init config failed, err=%v", err)
 		return
 	}
-	logger.Info("[IOT]initial config success!")
+	logger.Info("[IOT]init config success!")
 	//monitor
 	if err := monitor.Init("data_sync", config.Conf.Cluster); err != nil {
-		logger.Error("[IOT]initial monitor failed, err=%v", err)
+		logger.Error("[IOT]init monitor failed, err=%v", err)
 		return
 	}
-	logger.Info("[IOT]initial monitor success!")
+	logger.Info("[IOT]init monitor success!")
 	//run application
 	if err := application.Run(); err != nil {
 		logger.Error("[IOT] application run error, err=%v", err)

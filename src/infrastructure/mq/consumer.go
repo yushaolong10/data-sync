@@ -3,7 +3,6 @@ package mq
 import (
 	"lib/mq"
 	"lib/mq/kafka"
-	"lib/mq/qbus"
 )
 
 type MQConsumer interface {
@@ -25,10 +24,8 @@ func NewMQConsumer(kind string, cluster string, confPath string, logPath string,
 	switch kind {
 	case "kafka":
 		return kafka.NewMQConsumer(confPath, mqTopics, logPath)
-	case "qbus":
-		return qbus.NewMQConsumer(cluster, confPath, logPath, mqTopics)
 	default:
-		return qbus.NewMQConsumer(cluster, confPath, logPath, mqTopics)
+		return kafka.NewMQConsumer(confPath, mqTopics, logPath)
 	}
 }
 

@@ -14,7 +14,7 @@ import (
 )
 
 type Hooker interface {
-	HandleInspect() bool
+	HandleInspect(ctx *context.BizContext) bool
 }
 
 type StrategyInspect struct {
@@ -43,7 +43,7 @@ func (strategy *StrategyInspect) Name() string {
 func (strategy *StrategyInspect) Run() error {
 	//routine run
 	routine.Go(strategy.inspect)
-	logger.Info("[StrategyInspect.Run] inspect success.name:%s,duration:%d", strategy.name, strategy.conf.InspectDuration)
+	logger.Info("[StrategyInspect.Run] inspect success.name:%s,duration:%ds", strategy.name, strategy.conf.InspectDuration)
 	return nil
 }
 
@@ -56,29 +56,38 @@ func (strategy *StrategyInspect) inspect() {
 			ticker.Stop()
 			return
 		}
-		if strategy.safeHook() {
-			atomic.SwapInt32(&strategy.failedCount, 0)
+		//biz context with requestId
+		ctx := &context.BizContext{
+			RequestId:   util.GetTraceId(),
+			BaseContext: strategy.ctx,
+		}
+		if strategy.safeHook(ctx) {
+			//如果failedCount>0, 重置
+			if strategy.failedCount > 0 {
+				atomic.SwapInt32(&strategy.failedCount, 0)
+				monitor.UpdateIndexState(strategy.name, "inspect", int64(strategy.failedCount))
+			}
 			continue
 		}
 		curFailedCount := atomic.AddInt32(&strategy.failedCount, 1)
 		if curFailedCount > strategy.conf.InspectAlarmCount {
 			//同步异常
-			monitor.UpdateException("inspect", "exceedMaxFailedCount")
-			logger.Error("[StrategyInspect.inspect] failed Count exceed max limit, please check. name:%s, curFailCount:%d, maxLimitCount:%d", strategy.name, curFailedCount, strategy.conf.InspectAlarmCount)
+			monitor.UpdateException(strategy.name, "inspect", "exceedFailedCount")
+			logger.Error("[StrategyInspect.inspect] failed Count exceed max limit, please check. requestId:%s,name:%s, curFailCount:%d, maxLimitCount:%d", ctx.RequestId, strategy.name, curFailedCount, strategy.conf.InspectAlarmCount)
 		}
 		//gauge 监控
-		monitor.UpdateIndexState("inspect", "failedCount", int64(strategy.failedCount))
-		logger.Error("[StrategyInspect.inspect] strategy safeHook returned false. name:%s, curFailCount:%d", strategy.name, strategy.failedCount)
+		monitor.UpdateIndexState(strategy.name, "inspect", int64(strategy.failedCount))
+		logger.Error("[StrategyInspect.inspect] strategy safeHook returned false. requestId:%s,name:%s,curFailCount:%d", ctx.RequestId, strategy.name, strategy.failedCount)
 	}
 }
 
-func (strategy *StrategyInspect) safeHook() (b bool) {
+func (strategy *StrategyInspect) safeHook(ctx *context.BizContext) (b bool) {
 	var err error
 	defer func(begin time.Time) {
 		if p := recover(); p != nil {
 			err = fmt.Errorf("panic")
 			monitor.UpdatePanic("inspect")
-			logger.Error("[StrategyInspect.safeHook]name:%s, #Panic#(%v),backTrace:%s", strategy.name, p, string(debug.Stack()))
+			logger.Error("[StrategyInspect.safeHook]requestId:%s,name:%s, #Panic#(%v),backTrace:%s", ctx.RequestId, strategy.name, p, string(debug.Stack()))
 		}
 		if !b {
 			err = fmt.Errorf("inspect fail")
@@ -86,7 +95,7 @@ func (strategy *StrategyInspect) safeHook() (b bool) {
 		//timeUsed
 		interval := util.GetDurationMillis(begin)
 		monitor.UpdateStrategy("inspect", strategy.name, interval, err)
-		logger.Info("[StrategyInspect.safeHook] name:%s,timeUsed:%dus,err:%v", strategy.name, interval, err)
+		logger.Info("[StrategyInspect.safeHook] requestId:%s,name:%s,timeUsed:%dus,err:%v", ctx.RequestId, strategy.name, interval, err)
 	}(time.Now())
-	return strategy.hook.HandleInspect()
+	return strategy.hook.HandleInspect(ctx)
 }

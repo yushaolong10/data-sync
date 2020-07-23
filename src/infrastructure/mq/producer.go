@@ -2,7 +2,6 @@ package mq
 
 import (
 	"lib/mq/kafka"
-	"lib/mq/qbus"
 )
 
 type MQProducer interface {
@@ -16,9 +15,7 @@ func NewMQProducer(kind string, cluster string, logPath string, confPath string,
 	switch kind {
 	case "kafka":
 		return kafka.NewMQProducer(confPath, topics, logPath)
-	case "qbus":
-		return qbus.NewMQProducer(cluster, logPath, confPath, topics)
 	default:
-		return qbus.NewMQProducer(cluster, logPath, confPath, topics)
+		return kafka.NewMQProducer(confPath, topics, logPath)
 	}
 }

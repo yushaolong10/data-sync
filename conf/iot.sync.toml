@@ -8,7 +8,7 @@ monitor_port = 19992
 [ssh]
     [ssh.yushaolong]
         username = 'yushaolong'
-        board_host = '110.111.112.113:11022'
+        board_host = '10.11.112.113:11022'
         password = "yourpassword"   # 与private_path 二选一 (优先)
         private_path = './conf/empty.private.key' # 与 password 二选一
 
@@ -43,12 +43,14 @@ monitor_port = 19992
         [mysql_task.regular.table_name]  #表
             table_name = "table_name"     #表名称
             filter_cols = ["col1","col2"] #过滤字段, 被过滤的字段不同步
+            upsert = true #默认insert, 为true时,会on duplicate update
+
 	[mysql_task.source]
 		db_host = "110.111.112.113"
 		db_port = 3306
 		db_username = "database_name"
 		db_password = "database_password"
-		enable_ssh = true #关闭ssh隧道模式,直接使用host+port
+		enable_ssh = true #开启ssh隧道模式,使用tunnel_host+tunnel_port
 		[mysql_task.source.ssh]
 		    ssh_username = "yushaolong" #使用隧道用户
 		    tunnel_host = "127.0.0.1" #打通本地ip
@@ -58,7 +60,7 @@ monitor_port = 19992
 		db_port = 3307
         db_username = "database_name"
         db_password = "database_password"
-		enable_ssh = false   #开启ssh隧道模式
+		enable_ssh = false   #关闭ssh隧道模式
 		[mysql_task.target.ssh]
 
     [mysql_task.strategy] # 数据库策略

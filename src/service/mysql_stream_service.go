@@ -111,7 +111,7 @@ func (srv *MysqlStreamService) SelectLatestPrimaryId(table string, primaryCol st
 			//timeUsed
 			interval := util.GetDurationMillis(begin)
 			monitor.UpdateDependence("mysqlStreamService", "selectLatestPrimaryId", interval, err)
-			logger.Info("[MysqlStreamService.SelectLatestPrimaryId]requestId:%s,timeUsed:%dus,err:%v", srv.ctx.RequestId, interval, err)
+			logger.Info("[MysqlStreamService.SelectLatestPrimaryId]requestId:%s,sql:%s,timeUsed:%dus,err:%v", srv.ctx.RequestId, sql, interval, err)
 		}(time.Now())
 		//sql select
 		sql = fmt.Sprintf("SELECT %s FROM %s ORDER BY %s DESC LIMIT 1", primaryCol, table, primaryCol)
@@ -143,7 +143,7 @@ func (srv *MysqlStreamService) SelectFromPrimaryIdBetween(table string, primaryC
 			//timeUsed
 			interval := util.GetDurationMillis(begin)
 			monitor.UpdateDependence("mysqlStreamService", "selectFromPrimaryIdBetween", interval, err)
-			logger.Info("[MysqlStreamService.SelectFromPrimaryIdBetween]requestId:%s,timeUsed:%dus,err:%v", srv.ctx.RequestId, interval, err)
+			logger.Info("[MysqlStreamService.SelectFromPrimaryIdBetween]requestId:%s,sql:%s,timeUsed:%dus,err:%v", srv.ctx.RequestId, sql, interval, err)
 		}(time.Now())
 
 		//SELECT * FROM product_v2 WHERE product_id>416 ORDER BY product_id ASC LIMIT 10

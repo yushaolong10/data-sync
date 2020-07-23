@@ -10,12 +10,13 @@ import (
 var Conf GlobalConfig
 
 type GlobalConfig struct {
-	Env       string               `toml:"env"`
-	Cluster   string               `toml:"cluster"`
-	Http      HttpConfig           `toml:"http"`
-	SSh       map[string]SShConfig `toml:"ssh"`
-	Strategy  StrategyConfig       `toml:"strategy"`
-	MysqlTask []MysqlTaskConfig    `toml:"mysql_task"`
+	Env            string               `toml:"env"`
+	Cluster        string               `toml:"cluster"`
+	SyncIdFilePath string               `toml:"sync_id_file_path"`
+	Http           HttpConfig           `toml:"http"`
+	SSh            map[string]SShConfig `toml:"ssh"`
+	Strategy       StrategyConfig       `toml:"strategy"`
+	MysqlTask      []MysqlTaskConfig    `toml:"mysql_task"`
 }
 
 type HttpConfig struct {
@@ -74,6 +75,7 @@ type MysqlTaskConfig struct {
 type MysqlRegularConfig struct {
 	TableName  string   `toml:"table_name"`
 	FilterCols []string `toml:"filter_cols"`
+	Upsert     bool     `toml:"upsert"`
 }
 
 type MysqlMachineConfig struct {

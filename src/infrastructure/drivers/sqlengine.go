@@ -1,10 +1,12 @@
 package drivers
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/go-xorm/xorm"
+	"lib/logger"
 	"time"
 )
 
@@ -17,6 +19,10 @@ var (
 )
 
 type MysqlEngine struct {
+	ctx      context.Context
+	database string
+	host     string
+	port     int
 	*xorm.Engine
 }
 
@@ -45,7 +51,7 @@ type MySqlConfig struct {
 
 func InitMysql(confs map[string]MySqlConfig) error {
 	for dbName, conf := range confs {
-		engine, err := createMysqlEngine(conf)
+		engine, err := createMysqlEngine(context.Background(), conf)
 		if err != nil {
 			return fmt.Errorf("Load SqlEngine failed: dbname(%s),err(%v)", dbName, err)
 		}
@@ -57,7 +63,7 @@ func InitMysql(confs map[string]MySqlConfig) error {
 	return nil
 }
 
-func createMysqlEngine(conf MySqlConfig) (*MysqlEngine, error) {
+func createMysqlEngine(ctx context.Context, conf MySqlConfig) (*MysqlEngine, error) {
 	//here can use xorm.EngineGroup  for slave db.
 	dsn := fmt.Sprintf("%s:%s@%s(%s:%d)/%s?charset=utf8&timeout=%s&readTimeout=%s&writeTimeout=%s", conf.User, conf.Passwd, "tcp", conf.Host,
 		conf.Port, conf.DBName, conf.ConnTimeout, conf.ReadTimeout, conf.WriteTimeout)
@@ -65,7 +71,7 @@ func createMysqlEngine(conf MySqlConfig) (*MysqlEngine, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &MysqlEngine{Engine: engine}, nil
+	return &MysqlEngine{ctx: ctx, Engine: engine, database: conf.DBName, host: conf.Host, port: conf.Port}, nil
 }
 
 func GetMysqlEngine(db string) (*MysqlEngine, error) {
@@ -89,11 +95,11 @@ const (
 	mysql_read_timeout       = "10s"
 	mysql_write_timeout      = "10s"
 	mysql_max_conn_num       = 64
-	mysql_max_idle_conn_num  = 10
 	mysql_max_conn_life_time = 10
+	mysql_max_idle_conn_num  = 10
 )
 
-func NewCustomMysqlEngine(host string, port int, user, password string, database string) (*MysqlEngine, error) {
+func NewCustomMysqlEngine(ctx context.Context, host string, port int, user, password string, database string) (*MysqlEngine, error) {
 	conf := MySqlConfig{
 		DBName:          database,
 		Host:            host,
@@ -107,12 +113,26 @@ func NewCustomMysqlEngine(host string, port int, user, password string, database
 		MaxIdleConnNum:  mysql_max_idle_conn_num,
 		MaxConnLifeTime: mysql_max_conn_life_time,
 	}
-	engine, err := createMysqlEngine(conf)
+	engine, err := createMysqlEngine(ctx, conf)
 	if err != nil {
 		return nil, fmt.Errorf("createMysqlEngine failed. dbname(%s),err:%s", database, err.Error())
 	}
 	engine.SetMaxIdleConns(conf.MaxIdleConnNum)
 	engine.SetMaxOpenConns(conf.MaxConnNum)
 	engine.SetConnMaxLifetime(time.Duration(conf.MaxConnLifeTime) * time.Second)
+	engine.ShowSQL(true)
+	//监控
+	go engine.monitor()
 	return engine, nil
+}
+
+func (engine *MysqlEngine) monitor() {
+	for {
+		if engine.ctx.Err() != nil {
+			return
+		}
+		stats := engine.DB().Stats()
+		logger.Public("[MysqlEngine] database:%s,host:%s,port:%d,OpenConnections:%d", engine.database, engine.host, engine.port, stats.OpenConnections)
+		time.Sleep(time.Second)
+	}
 }

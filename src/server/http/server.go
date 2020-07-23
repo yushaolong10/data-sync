@@ -57,7 +57,7 @@ func newHttpServer(httpPort int64) *http.Server {
 }
 
 func newHttpRouter() *http.ServeMux {
-	adaptor := &httpRouterAdaptor{}
+	adaptor := &httpRouterAdaptor{secretKey: "yushaolong@360.cn"}
 	mux := http.NewServeMux()
 	//http router path
 	mux.HandleFunc("/sync/getConfig", adaptor.wrap(adaptor.getConfig))
@@ -67,13 +67,33 @@ func newHttpRouter() *http.ServeMux {
 
 //adaptor
 type httpRouterAdaptor struct {
+	secretKey string
 }
 
 //wrap middleware
 func (adaptor *httpRouterAdaptor) wrap(handler http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		r.Header.Set(DataSyncRequestId, util.GetTraceId())
+		requestId := util.GetTraceId()
+		r.Header.Set(DataSyncRequestId, requestId)
+		//get secret key
+		secretKey, ok := r.URL.Query()["secret_key"]
+		if !ok {
+			adaptor.send(w, &httpResponseData{
+				RequestId: requestId,
+				Code:      900,
+				Message:   fmt.Sprintf("need secret_key"),
+			})
+			return
+		}
+		if secretKey[0] != adaptor.secretKey {
+			adaptor.send(w, &httpResponseData{
+				RequestId: requestId,
+				Code:      901,
+				Message:   fmt.Sprintf("secret_key invalid"),
+			})
+			return
+		}
 		handler.ServeHTTP(w, r)
 	}
 }
@@ -97,7 +117,6 @@ func (adaptor *httpRouterAdaptor) send(resp http.ResponseWriter, respData *httpR
 func (adaptor *httpRouterAdaptor) getConfig(w http.ResponseWriter, r *http.Request) {
 	adaptor.send(w, &httpResponseData{
 		RequestId: r.Header.Get(DataSyncRequestId),
-		Code:      1020,
 		Data:      config.Conf,
 	})
 }

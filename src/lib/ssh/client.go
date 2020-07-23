@@ -8,6 +8,11 @@ import (
 	"time"
 )
 
+const (
+	//tcp establish timeout
+	connTimeout = time.Duration(15) * time.Second
+)
+
 type SSHTool struct {
 	host        string
 	port        string
@@ -78,7 +83,7 @@ func makePasswordConfig(username string, password string) (*ssh.ClientConfig, er
 			ssh.Password(password),
 		},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		Timeout:         time.Duration(5) * time.Second,
+		Timeout:         connTimeout,
 	}
 	return conf, nil
 }
@@ -94,7 +99,7 @@ func makePrivateKeyConfig(username string, privateKey string) (*ssh.ClientConfig
 			ssh.PublicKeys(signer),
 		},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		Timeout:         time.Duration(5) * time.Second,
+		Timeout:         connTimeout,
 	}
 	return conf, nil
 }

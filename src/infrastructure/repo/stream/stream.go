@@ -38,7 +38,7 @@ func BuildMysqlStreamRepo(ctx *context.BaseContext, database string, conf config
 		port = sshConf.TunnelPort
 	}
 	//new mysql engine
-	conn, err := drivers.NewCustomMysqlEngine(host, port, conf.DbUsername, conf.DbPassword, database)
+	conn, err := drivers.NewCustomMysqlEngine(ctx.RootCtx, host, port, conf.DbUsername, conf.DbPassword, database)
 	if err != nil {
 		logger.Error("[BuildMysqlStreamRepo] NewCustomMysqlEngine err:%s", err.Error())
 		return nil, err

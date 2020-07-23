@@ -15,8 +15,12 @@ import (
 	"lib/json"
 	"lib/logger"
 	"lib/lru"
+	"lib/routine"
 	"lib/util"
+	"os"
 	"service"
+	"strconv"
+	"sync"
 )
 
 type MysqlHandler struct {
@@ -33,15 +37,20 @@ type MysqlHandler struct {
 	//key:table
 	//val:lastInspectPrimaryId
 	inspectStates map[string]int64
+	//sync state
+	//key:table
+	//val: sync failed times
+	syncWatchStates map[string]int64
 	//database table info
 	tmpCache *lru.LRUCache
 }
 
 func NewMysqlHandler(ctx *context.BaseContext) *MysqlHandler {
 	return &MysqlHandler{
-		ctx:           ctx,
-		inspectStates: make(map[string]int64),
-		tmpCache:      lru.NewLRUCache(1000, 10), //10s
+		ctx:             ctx,
+		inspectStates:   make(map[string]int64),
+		syncWatchStates: make(map[string]int64),
+		tmpCache:        lru.NewLRUCache(1000, 10), //10s
 	}
 }
 
@@ -90,17 +99,26 @@ func (handler *MysqlHandler) Execute() error {
 		logger.Error("[MysqlHandler.Execute] strategy RunAll err:%s.", err.Error())
 		return err
 	}
-	monitor.UpdateIndexState("mysql", handler.name, int64(handler.strategyMode))
+	monitor.UpdateIndexState(handler.name, "mysql", int64(handler.strategyMode))
 	return nil
 }
 
 //syncMq implement
-func (handler *MysqlHandler) HandleMqMessage(msg *syncmq.TopicMessage) error {
-	//biz context with requestId
-	ctx := &context.BizContext{
-		RequestId:   util.GetTraceId(),
-		BaseContext: handler.ctx,
+func (handler *MysqlHandler) HandleMqMessage(ctx *context.BizContext, msg *syncmq.TopicMessage) error {
+	//binlog幂等
+	//重试三次
+	var err error
+	for i := 0; i < 3; i++ {
+		err = handler.handleMqMessage(ctx, msg)
+		if err == nil {
+			break
+		}
+		logger.Error("[MysqlHandler.HandleMqMessage]retry:%d,requestId:%s,msg:%s,err:%s", i, ctx.RequestId, util.StructToJson(msg), err.Error())
 	}
+	return err
+}
+
+func (handler *MysqlHandler) handleMqMessage(ctx *context.BizContext, msg *syncmq.TopicMessage) error {
 	//解析
 	decode := make(map[string]interface{})
 	if err := json.Unmarshal([]byte(msg.Message), &decode); err != nil {
@@ -158,7 +176,9 @@ func (handler *MysqlHandler) handleInsertSql(ctx *context.BizContext, connSrv *s
 	condRepo := condition.NewMysqlRunTimeFilterCond(ctx, handler.regularCond, tableFmt)
 	filterSrv := service.NewMysqlFilterService(ctx)
 	series, need := filterSrv.FilterInsert(condRepo, insertFmt)
+	//是否写入
 	if !need {
+		logger.Info("[MysqlHandler.handleInsertSql] not need to write target database. filterSrv.FilterInsert/Upsert returned false. requestId:%s, insertFmt:%s", ctx.RequestId, util.StructToJson(insertFmt))
 		return nil
 	}
 	//序列化并写入目标库
@@ -260,7 +280,7 @@ func (handler *MysqlHandler) checkTableInTargetDatabase(ctx *context.BizContext,
 
 //获取目标库表结构
 func (handler *MysqlHandler) getTableDescFromTargetDatabase(ctx *context.BizContext, connSrv *service.MysqlStreamService, table string) (*dao.TableFormat, error) {
-	cacheVal, _ := handler.tmpCache.Get("TableDesc")
+	cacheVal, _ := handler.tmpCache.Get("TableDesc" + table)
 	if cacheVal != nil {
 		return cacheVal.(*dao.TableFormat), nil
 	}
@@ -269,7 +289,7 @@ func (handler *MysqlHandler) getTableDescFromTargetDatabase(ctx *context.BizCont
 		logger.Error("[MysqlHandler.getTableDescFromTargetDatabase] targetRepo read TableDesc error. requestId:%s, err:%s", ctx.RequestId, err.Error())
 		return nil, err
 	}
-	handler.tmpCache.Update("TableDesc", tableDesc)
+	handler.tmpCache.Update("TableDesc"+table, tableDesc)
 	return tableDesc.(*dao.TableFormat), nil
 }
 
@@ -291,12 +311,7 @@ func (handler *MysqlHandler) writeSeriesToDatabase(ctx *context.BizContext, conn
 }
 
 //inspect implement
-func (handler *MysqlHandler) HandleInspect() bool {
-	//biz context with requestId
-	ctx := &context.BizContext{
-		RequestId:   util.GetTraceId(),
-		BaseContext: handler.ctx,
-	}
+func (handler *MysqlHandler) HandleInspect(ctx *context.BizContext) bool {
 	//获取目标库表信息
 	connSrv := service.NewMysqlStreamService(ctx)
 	//获取相同表
@@ -317,7 +332,7 @@ func (handler *MysqlHandler) HandleInspect() bool {
 			logger.Error("[MysqlHandler.getPrimaryKeyLatestId] getTablePrimaryKeyCol error. requestId:%s,table:%s,err:%s", ctx.RequestId, table, err.Error())
 			return false
 		}
-		//获取目标表主键
+		//查询目标表主键最新id
 		latestId, err := handler.getPrimaryKeyLatestId(ctx, connSrv, table, primaryCol)
 		if err != nil {
 			logger.Error("[MysqlHandler.HandleInspect] getPrimaryKeyLatestId error. requestId:%s,err:%s", ctx.RequestId, err.Error())
@@ -342,6 +357,7 @@ func (handler *MysqlHandler) HandleInspect() bool {
 		//此段时间没有新的变更
 		if handler.inspectStates[table] == targetId {
 			//本次targetId 与上次一致
+			logger.Error("[MysqlHandler.HandleInspect] repo primaryKeyId same as lastTime primaryId. requestId:%s,database(%s),table(%s),sourcePrimaryId:%d,targetPrimaryId:%d", ctx.RequestId, handler.database, table, sourceId, targetId)
 			return false
 		}
 		//目标库主键与上次检测不一致
@@ -371,17 +387,12 @@ func (handler *MysqlHandler) getIntersectTables(ctx *context.BizContext, connSrv
 
 type primaryKeyLatestId struct {
 	SourcePrimaryId int64
+	CurrentSyncId   int64
 	TargetPrimaryId int64
 }
 
 //获取最新主键id
 func (handler *MysqlHandler) getPrimaryKeyLatestId(ctx *context.BizContext, connSrv *service.MysqlStreamService, table string, primaryCol string) (*primaryKeyLatestId, error) {
-	//获取目标表主键
-	primaryCol, err := handler.getTablePrimaryKeyCol(ctx, connSrv, table)
-	if err != nil {
-		logger.Error("[MysqlHandler.getPrimaryKeyLatestId] getTablePrimaryKeyCol error. requestId:%s,table:%s,err:%s", ctx.RequestId, table, err.Error())
-		return nil, err
-	}
 	//查询目标表与原表主键最新Id
 	targetPriId, err := handler.targetConnRepo.Read(connSrv.SelectLatestPrimaryId(table, primaryCol))
 	if err != nil {
@@ -393,11 +404,52 @@ func (handler *MysqlHandler) getPrimaryKeyLatestId(ctx *context.BizContext, conn
 		logger.Error("[MysqlHandler.getPrimaryKeyLatestId] sourceRepo SelectLatestPrimaryId error. requestId:%s, err:%s", ctx.RequestId, err.Error())
 		return nil, err
 	}
+	//open file get current syncId
+	curId, err := handler.readCurrentSyncId(table)
+	if err != nil {
+		logger.Error("[MysqlHandler.getPrimaryKeyLatestId] readCurrentSyncId error. requestId:%s,table:%s,err:%s", ctx.RequestId, table, err.Error())
+		return nil, err
+	}
 	latestId := primaryKeyLatestId{
 		SourcePrimaryId: sourcePriId.(int64),
 		TargetPrimaryId: targetPriId.(int64),
+		CurrentSyncId:   curId,
 	}
 	return &latestId, nil
+}
+
+func (handler *MysqlHandler) readCurrentSyncId(table string) (int64, error) {
+	//filepath
+	filePath := fmt.Sprintf("%s/%s", config.Conf.SyncIdFilePath, handler.name)
+	//open file
+	fd, err := util.OpenFile(filePath, table, os.O_RDWR|os.O_CREATE, os.ModePerm)
+	if err != nil {
+		return 0, fmt.Errorf("open filename(%s) err:%s", table, err.Error())
+	}
+	buf := make([]byte, 512)
+	n, err := fd.Read(buf)
+	defer fd.Close()
+	if err != nil {
+		return 0, nil
+	}
+	val, _ := strconv.ParseInt(string(buf[:n]), 10, 64)
+	return val, nil
+}
+
+func (handler *MysqlHandler) writeCurrentSyncId(table string, id int64) error {
+	//filepath
+	filePath := fmt.Sprintf("%s/%s", config.Conf.SyncIdFilePath, handler.name)
+	//open file
+	fd, err := util.OpenFile(filePath, table, os.O_RDWR|os.O_CREATE, os.ModePerm)
+	if err != nil {
+		return fmt.Errorf("open filename(%s) err:%s", table, err.Error())
+	}
+	_, err = fd.WriteString(strconv.FormatInt(id, 10))
+	defer fd.Close()
+	if err != nil {
+		return fmt.Errorf("filename(%s) write err:%s", table, err.Error())
+	}
+	return nil
 }
 
 //获取表主键col名称
@@ -428,12 +480,7 @@ func (handler *MysqlHandler) getTablePrimaryKeyCol(ctx *context.BizContext, conn
 }
 
 //syncDirect implement
-func (handler *MysqlHandler) HandleDirect() error {
-	//biz context with requestId
-	ctx := &context.BizContext{
-		RequestId:   util.GetTraceId(),
-		BaseContext: handler.ctx,
-	}
+func (handler *MysqlHandler) HandleDirect(ctx *context.BizContext) error {
 	//获取目标库表信息
 	connSrv := service.NewMysqlStreamService(ctx)
 	//获取交集表
@@ -443,6 +490,7 @@ func (handler *MysqlHandler) HandleDirect() error {
 		return err
 	}
 	//同步表
+	var wg = new(sync.WaitGroup)
 	for _, table := range sameTables {
 		//上下文是否终止
 		if ctx.IsCanceled() {
@@ -459,26 +507,49 @@ func (handler *MysqlHandler) HandleDirect() error {
 			logger.Error("[MysqlHandler.getPrimaryKeyLatestId] getTablePrimaryKeyCol error. requestId:%s,table:%s,err:%s", ctx.RequestId, table, err.Error())
 			return err
 		}
-		//获取目标表主键
+		//查询主键最新id
 		latestId, err := handler.getPrimaryKeyLatestId(ctx, connSrv, table, primaryCol)
 		if err != nil {
 			logger.Error("[MysqlHandler.HandleDirect] getPrimaryKeyLatestId error. requestId:%s,err:%s", ctx.RequestId, err.Error())
 			return err
 		}
-		if latestId.SourcePrimaryId <= latestId.TargetPrimaryId {
-			logger.Info("[MysqlHandler.HandleDirect] not need sync, source primaryKeyId is less than or equal target. requestId:%s,database(%s),table(%s),sourcePrimaryId:%d,targetPrimaryId:%d", ctx.RequestId, handler.database, table, latestId.SourcePrimaryId, latestId.TargetPrimaryId)
+		if latestId.CurrentSyncId >= latestId.SourcePrimaryId {
+			logger.Info("[MysqlHandler.HandleDirect] not need sync, curFileSync PrimaryKeyId is greater or equal sourceRepo PrimaryKeyId. requestId:%s,database(%s),table(%s),curSyncId:%d,sourcePrimaryId:%d", ctx.RequestId, handler.database, table, latestId.CurrentSyncId, latestId.SourcePrimaryId)
 			continue
 		}
-		//同步
-		err = handler.syncTableDirect(ctx, connSrv, table, primaryCol, latestId)
-		if err != nil {
-			logger.Error("[MysqlHandler.HandleDirect] sync table data from source to target database error. requestId:%s,table:%s,err:%s", ctx.RequestId, table, err.Error())
-		}
+		//并行同步
+		handler.syncTableDirectWrap(ctx, wg, connSrv, table, primaryCol, latestId)
 	}
+	wg.Wait()
 	return nil
 }
 
+//数据表并行同步
+func (handler *MysqlHandler) syncTableDirectWrap(ctx *context.BizContext, wg *sync.WaitGroup, connSrv *service.MysqlStreamService, table string, primaryCol string, latestId *primaryKeyLatestId) error {
+	fn := func() {
+		wg.Add(1)
+		defer wg.Done()
+		err := handler.syncTableDirect(ctx, connSrv, table, primaryCol, latestId)
+		if err != nil {
+			logger.Error("[MysqlHandler.syncTableDirectWrap] sync table data from source to target database error. requestId:%s,name:%s,table:%s,err:%s", ctx.RequestId, handler.name, table, err.Error())
+		}
+	}
+	routine.Go(fn)
+	return nil
+}
+
+const (
+	maxSyncDirectFailedCount = 5
+)
+
 func (handler *MysqlHandler) syncTableDirect(ctx *context.BizContext, connSrv *service.MysqlStreamService, table string, primaryCol string, latestId *primaryKeyLatestId) error {
+	//sync increment
+	handler.syncWatchStates[table]++
+	if handler.syncWatchStates[table] >= maxSyncDirectFailedCount {
+		monitor.UpdateException(handler.name, "syncDirect", table)
+		logger.Error("[MysqlHandler.syncTableDirect] sync direct failed count greater than max(%d). requestId:%s,name:%s,database:%s,table(%s),cur failed_count:%d", maxSyncDirectFailedCount, ctx.RequestId, handler.name, handler.database, table, handler.syncWatchStates[table])
+		return fmt.Errorf("sync direct database(%s) table(%s) failed count:%d greater than 5, please check", handler.database, table, handler.syncWatchStates[table])
+	}
 	//获取表结构
 	tableFmt, err := handler.getTableDescFromTargetDatabase(ctx, connSrv, table)
 	if err != nil {
@@ -486,14 +557,20 @@ func (handler *MysqlHandler) syncTableDirect(ctx *context.BizContext, connSrv *s
 		return err
 	}
 	//数据起终位置
-	fromId := latestId.TargetPrimaryId
+	fromId := latestId.CurrentSyncId
 	toId := latestId.SourcePrimaryId
 	//每次同步条数
 	limit := int64(100)
 	fmtSrv := service.NewMysqlFormatService(ctx)
 	//循环同步
 	for begin := fromId; begin < toId; begin = begin + limit {
-		dataList, err := handler.sourceConnRepo.Read(connSrv.SelectFromPrimaryIdBetween(table, primaryCol, begin, begin+limit))
+		//cal nextId for select between
+		nextId := begin + limit
+		if nextId > toId {
+			nextId = toId
+		}
+		//get between list
+		dataList, err := handler.sourceConnRepo.Read(connSrv.SelectFromPrimaryIdBetween(table, primaryCol, begin, nextId))
 		if err != nil {
 			logger.Error("[MysqlHandler.syncTableDirect] SelectFromPrimaryIdBetween error. requestId:%s, err:%s", ctx.RequestId, err.Error())
 			return err
@@ -516,6 +593,12 @@ func (handler *MysqlHandler) syncTableDirect(ctx *context.BizContext, connSrv *s
 				return err
 			}
 		}
+		if err := handler.writeCurrentSyncId(table, nextId); err != nil {
+			logger.Error("[MysqlHandler.syncTableDirect] writeCurrentSyncId error. requestId:%s,table:%s,sourcePrimaryId:%d,beginId:%d,nextId:%s", ctx.RequestId, table, latestId.SourcePrimaryId, begin, nextId)
+			return err
+		}
+		//重置为正常
+		handler.syncWatchStates[table] = -1
 	}
 	return nil
 }

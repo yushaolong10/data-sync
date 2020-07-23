@@ -6,6 +6,7 @@ import (
 	"infrastructure/repo/format"
 	"infrastructure/repo/serializer"
 	"lib/logger"
+	"lib/util"
 	"service/customfilter"
 )
 
@@ -41,12 +42,12 @@ func (srv *MysqlFilterService) FilterInsert(cond *condition.MysqlRunTimeFilterCo
 	//表定制行为
 	custom := customfilter.GetCustomFilter(insertFmt.Database, insertFmt.Table)
 	if custom != nil {
-		sqlSeries,err := custom.FilterInsert(cond, insertFmt)
+		customInsert, err := custom.FilterInsert(cond, insertFmt)
 		if err != nil {
-			logger.Error("[MysqlFilterService.FilterInsert] custom.FilterInsert error.requestId:%s,err:%s",srv.ctx.RequestId, err.Error())
+			logger.Error("[MysqlFilterService.FilterInsert] custom.FilterInsert error.requestId:%s,insertFmt:%s,err:%s", srv.ctx.RequestId, util.StructToJson(insertFmt), err.Error())
 			return nil, false
 		}
-		return sqlSeries,true
+		insertFmt = customInsert
 	}
 	//生成序列化
 	sqlSeries := serializer.SqlBehaviour{
@@ -54,6 +55,10 @@ func (srv *MysqlFilterService) FilterInsert(cond *condition.MysqlRunTimeFilterCo
 		Database: insertFmt.Database,
 		Table:    insertFmt.Table,
 		Data:     insertFmt.Data,
+	}
+	//是否on duplicate update
+	if cond.IsUpsert(insertFmt.Table) {
+		sqlSeries.Type = serializer.SqlBehaviourUpsert
 	}
 	return &sqlSeries, true
 }

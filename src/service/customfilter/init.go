@@ -3,7 +3,6 @@ package customfilter
 import (
 	"infrastructure/repo/condition"
 	"infrastructure/repo/format"
-	"infrastructure/repo/serializer"
 )
 
 var (
@@ -11,7 +10,7 @@ var (
 )
 
 type CustomFilter interface {
-	FilterInsert(cond *condition.MysqlRunTimeFilterCondImpl, format *format.InsertFormat) (*serializer.SqlBehaviour, error)
+	FilterInsert(cond *condition.MysqlRunTimeFilterCondImpl, format *format.InsertFormat) (*format.InsertFormat, error)
 }
 
 func GetCustomFilter(database string, table string) CustomFilter {

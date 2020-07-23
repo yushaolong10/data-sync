@@ -39,7 +39,6 @@ start()
         sleep 5
         echo "server stop success."
     fi
-    cp ./conf/iot.sync.toml.prod ./conf/iot.sync.toml
     ulimit -n 327680 && ulimit -u 65535
     export LD_LIBRARY_PATH=/home/q/system/qbus/
     nohup  ./bin/iot-data-sync > ./nohup_data_sync.log 2>&1 &

@@ -13,6 +13,7 @@ const (
 type BaseRegularCond interface {
 	IsTableNeedFilter(table string) bool
 	GetTableFilterCols(table string) map[string]struct{}
+	IsUpsert(table string) bool
 }
 
 func BuildMysqlDataBaseRegularCond(ctx *context.BaseContext, conf config.MysqlTaskConfig) BaseRegularCond {
@@ -33,7 +34,10 @@ func BuildMysqlDataBaseRegularCond(ctx *context.BaseContext, conf config.MysqlTa
 		for _, v := range tableRegular.FilterCols {
 			filterCols[v] = struct{}{}
 		}
-		regular.RegularTableMap[table] = RegularTableMap{FilterCols: filterCols}
+		regular.RegularTableMap[table] = RegularTableMap{
+			FilterCols: filterCols,
+			IsUpsert:   tableRegular.Upsert,
+		}
 	}
 	return regular
 }

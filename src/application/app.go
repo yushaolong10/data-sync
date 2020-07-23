@@ -27,7 +27,7 @@ type TaskHandler interface {
 type App struct {
 	ctx      *context.BaseContext
 	state    int16
-	handlers []TaskHandler
+	handlers map[string]TaskHandler
 }
 
 //初始化
@@ -39,7 +39,7 @@ func (app *App) initial() error {
 		CancelFunc: cancelFunc,
 	}
 	//init handler slice
-	app.handlers = make([]TaskHandler, 0)
+	app.handlers = make(map[string]TaskHandler)
 	//add
 	if len(config.Conf.MysqlTask) > 0 {
 		for _, conf := range config.Conf.MysqlTask {
@@ -48,7 +48,7 @@ func (app *App) initial() error {
 				logger.Error("[application.initial] mysql handler load config err:%s", err.Error())
 				return err
 			}
-			app.AddHandler(handler)
+			app.AddHandler(handler.name, handler)
 		}
 	}
 	return nil
@@ -65,8 +65,8 @@ func (app *App) Context() *context.BaseContext {
 }
 
 //添加处理者
-func (app *App) AddHandler(handler TaskHandler) {
-	app.handlers = append(app.handlers, handler)
+func (app *App) AddHandler(name string, handler TaskHandler) {
+	app.handlers[name] = handler
 }
 
 //运行
@@ -99,12 +99,13 @@ func (app *App) Reload() error {
 	if app.state != AppStateRunning {
 		return fmt.Errorf("reload error. app not runnig(%d)", app.state)
 	}
-	logger.Info("[App.Reload] app begin reload")
+	//set state
+	app.SetState(AppStateReload)
+	logger.Info("[App.Reload] app begin reload...")
+	//context cancel
 	app.ctx.CancelFunc()
 	//等待业务routine退出
 	routine.Wait()
-	//set state
-	app.SetState(AppStateReload)
 	//重启
 	if err := app.Run(); err != nil {
 		logger.Error("[App.Reload] app.run err:%s", err.Error())
@@ -120,12 +121,15 @@ func (app *App) Stop() error {
 	if app.state != AppStateRunning {
 		return fmt.Errorf("stop error. app not runnig(%d), ", app.state)
 	}
-	app.ctx.CancelFunc()
-	app.handlers = make([]TaskHandler, 0)
-	//等待业务routine退出
-	routine.Wait()
 	//set state
 	app.SetState(AppStateStop)
+	logger.Info("[App.Stop] app begin stop...")
+	//context cancel
+	app.ctx.CancelFunc()
+	app.handlers = make(map[string]TaskHandler)
+	//等待业务routine退出
+	routine.Wait()
+	logger.Info("[App.Stop] app stop success.")
 	return nil
 }
 

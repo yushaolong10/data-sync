@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/md5"
 	"crypto/sha1"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"github.com/json-iterator/go"
@@ -179,4 +180,56 @@ func CheckSum(data []byte) uint16 {
 	//加上高16位进位的部分
 	sum += (sum >> 16)
 	return uint16(^sum)
+}
+
+func OpenFile(path string, filename string, flag int, perm os.FileMode) (*os.File, error) {
+	_, err := Mkdir(path, perm)
+	if err != nil {
+		return nil, fmt.Errorf("mkdir(%s) err:%s", path, err.Error())
+	}
+	file := fmt.Sprintf("%s/%s", path, filename)
+	fd, err := os.OpenFile(file, flag, perm)
+	if err != nil {
+		return nil, fmt.Errorf("openFile(%s) err:%s", file, err.Error())
+	}
+	return fd, nil
+}
+
+func Mkdir(dir string, perm os.FileMode) (bool, error) {
+	// 创建文件夹
+	exist, err := PathExists(dir)
+	if err != nil {
+		return false, err
+	}
+	if exist {
+		return false, nil
+	} else {
+		err := os.MkdirAll(dir, perm)
+		if err != nil {
+			return false, err
+		} else {
+			return true, nil
+		}
+	}
+}
+
+func PathExists(path string) (bool, error) {
+	_, err := os.Stat(path)
+	if err == nil {
+		return true, nil
+	}
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return false, err
+}
+
+func Int64ToBytes(i int64) []byte {
+	var buf = make([]byte, 8)
+	binary.BigEndian.PutUint64(buf, uint64(i))
+	return buf
+}
+
+func BytesToInt64(buf []byte) int64 {
+	return int64(binary.BigEndian.Uint64(buf))
 }
