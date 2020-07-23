@@ -1,5 +1,6 @@
 env = "prod"
 cluster = "cn"
+sync_id_file_path = "./conf"
 
 [http]
 http_port = 19991
