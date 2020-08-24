@@ -53,29 +53,34 @@ func (strategy *StrategySyncMq) Run() error {
 	}
 	//routine run
 	routine.Go(strategy.getMqMessage)
+	routine.Go(strategy.monitor)
 	logger.Info("[StrategySyncMq.Run] mq consumer start success.name:%s", strategy.name)
 	return nil
 }
 
-func (strategy *StrategySyncMq) close() {
-	//close mq
-	strategy.mqConsumer.Close()
-	//close channel
-	close(strategy.messageChan)
+func (strategy *StrategySyncMq) monitor() {
+	select {
+	case <-strategy.ctx.Done():
+		logger.Info("[StrategySyncMq.monitor] context canceled. name:%s", strategy.name)
+		//close mq
+		//will deadlock if not use goroutine
+		//because of not send message
+		strategy.mqConsumer.Close()
+		//close channel
+		close(strategy.messageChan)
+	}
 }
 
 func (strategy *StrategySyncMq) getMqMessage() {
 	for {
-		//check if canceled
-		if strategy.ctx.IsCanceled() {
-			strategy.close()
-			logger.Info("[StrategySyncMq.getMqMessage] context canceled. name:%s", strategy.name)
-			return
-		}
 		//read message
 		var msg *TopicMessage
 		select {
 		case msg = <-strategy.messageChan:
+			//fix nil panic
+			if msg == nil {
+				goto end1
+			}
 			//biz context with requestId
 			ctx := &context.BizContext{
 				RequestId:   util.GetTraceId(),
@@ -84,6 +89,8 @@ func (strategy *StrategySyncMq) getMqMessage() {
 			strategy.safeHook(ctx, msg)
 		}
 	}
+end1:
+	logger.Info("[StrategySyncMq.getMqMessage] exit success. name:%s", strategy.name)
 }
 
 func (strategy *StrategySyncMq) safeHook(ctx *context.BizContext, msg *TopicMessage) (err error) {

@@ -12,6 +12,11 @@ func (b *BaseContext) IsCanceled() bool {
 	return b.RootCtx.Err() != nil
 }
 
+func (b *BaseContext) Done() <-chan struct{} {
+	//done, return chan empty
+	return b.RootCtx.Done()
+}
+
 type BizContext struct {
 	*BaseContext
 	RequestId string

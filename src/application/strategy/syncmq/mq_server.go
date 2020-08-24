@@ -59,7 +59,7 @@ func (consumer *MqConsumerServer) Start() error {
 	}
 	mqConsumer := mq.NewMQConsumer(consumer.Kind, consumer.Cluster, consumer.ConfPath, consumer.LogPath, topicModelList)
 	mqConsumer.Register(consumer)
-	if err := consumer.Start(); err != nil {
+	if err := mqConsumer.Start(); err != nil {
 		return err
 	}
 	consumer.mqConsumer = mqConsumer
